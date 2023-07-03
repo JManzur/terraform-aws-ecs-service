@@ -200,22 +200,22 @@ resource "aws_security_group" "ecs_tasks" {
 resource "aws_lb_target_group" "ecs_tasks" {
   for_each = { for k, v in var.alb_target_groups : v.name => v }
 
-  name        = "${var.name_prefix}-${var.environment}-${var.service_name}-tg"
+  name        = "${var.name_prefix}-${var.environment}-${each.key}-tg"
   port        = each.value.port
-  protocol    = each.value.protocol
+  protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"
 
-  tags = { Name = "${var.name_prefix}-${var.environment}-${var.service_name}-tg" }
+  tags = { Name = "${var.name_prefix}-${var.environment}-${each.key}-tg" }
 
   health_check {
-    healthy_threshold   = try(each.value.health.healthy_threshold, var.alb_health_check_config.healthy_threshold)
-    unhealthy_threshold = try(each.value.health.unhealthy_threshold, var.alb_health_check_config.unhealthy_threshold)
-    timeout             = try(each.value.health.timeout, var.alb_health_check_config.timeout)
-    interval            = try(each.value.health.interval, var.alb_health_check_config.interval)
-    matcher             = try(each.value.health.matcher, var.alb_health_check_config.matcher)
-    protocol            = try(each.value.health.protocol, var.alb_health_check_config.protocol)
-    path                = each.value.health.path
+    healthy_threshold   = var.alb_health_check_config.healthy_threshold
+    unhealthy_threshold = var.alb_health_check_config.unhealthy_threshold
+    timeout             = var.alb_health_check_config.timeout
+    interval            = var.alb_health_check_config.interval
+    matcher             = var.alb_health_check_config.matcher
+    protocol            = var.alb_health_check_config.protocol
+    path                = each.value.healthcheck_path
   }
 }
 
@@ -276,7 +276,7 @@ resource "aws_ecs_service" "this" {
 
   # Network configuration:
   network_configuration {
-    security_groups  = length(var.security_group) == 0 ? compact([aws_security_group.ecs_tasks[0].id, join(",", var.add_security_groups)]) : [var.security_group]
+    security_groups  = length(var.security_group) == 0 ? compact([aws_security_group.ecs_tasks[0].id, join(",", var.additional_security_groups)]) : [var.security_group]
     subnets          = var.private_subnets
     assign_public_ip = false
   }

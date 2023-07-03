@@ -592,8 +592,8 @@ variable "https_listener_arn" {
   default     = "" # Null is allowed if var.alb_listener_rules.listener_arn is set
 }
 
-
-variable "add_security_groups" {
+variable "additional_security_groups" {
   type        = list(any)
-  description = "list of additional security groups"
+  description = "[OPTIONAL] list of additional security groups"
+  default     = [] # Empty list is allowed
 }
