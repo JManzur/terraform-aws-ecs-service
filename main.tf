@@ -200,22 +200,22 @@ resource "aws_security_group" "ecs_tasks" {
 resource "aws_lb_target_group" "ecs_tasks" {
   for_each = { for k, v in var.alb_target_groups : v.name => v }
 
-  name        = "${var.name_prefix}-${var.environment}-${each.key}-tg"
+  name        = "${var.name_prefix}-${var.environment}-${var.service_name}-tg"
   port        = each.value.port
-  protocol    = "HTTP"
+  protocol    = each.value.protocol
   vpc_id      = var.vpc_id
   target_type = "ip"
 
-  tags = { Name = "${var.name_prefix}-${var.environment}-${each.key}-tg" }
+  tags = { Name = "${var.name_prefix}-${var.environment}-${var.service_name}-tg" }
 
   health_check {
-    healthy_threshold   = var.alb_health_check_config.healthy_threshold
-    unhealthy_threshold = var.alb_health_check_config.unhealthy_threshold
-    timeout             = var.alb_health_check_config.timeout
-    interval            = var.alb_health_check_config.interval
-    matcher             = var.alb_health_check_config.matcher
-    protocol            = var.alb_health_check_config.protocol
-    path                = each.value.healthcheck_path
+    healthy_threshold   = try(each.value.health.healthy_threshold, var.alb_health_check_config.healthy_threshold)
+    unhealthy_threshold = try(each.value.health.unhealthy_threshold, var.alb_health_check_config.unhealthy_threshold)
+    timeout             = try(each.value.health.timeout, var.alb_health_check_config.timeout)
+    interval            = try(each.value.health.interval, var.alb_health_check_config.interval)
+    matcher             = try(each.value.health.matcher, var.alb_health_check_config.matcher)
+    protocol            = try(each.value.health.protocol, var.alb_health_check_config.protocol)
+    path                = each.value.health.path
   }
 }
 
