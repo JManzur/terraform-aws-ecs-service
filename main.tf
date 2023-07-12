@@ -63,7 +63,7 @@ resource "aws_kms_alias" "cloudwatch_logs" {
 resource "aws_cloudwatch_log_group" "this" {
   for_each = { for app in var.container_definitions : app.name => app }
 
-  name              = "/ecs/${var.name_prefix}-${var.environment}-${var.service_name}"
+  name              = "/ecs/${var.name_prefix}-${var.environment}-${each.key}"
   retention_in_days = var.logs_retention
 
   /*
@@ -73,7 +73,7 @@ resource "aws_cloudwatch_log_group" "this" {
   */
   kms_key_id = var.create_kms_key ? aws_kms_key.cloudwatch_logs[0].arn : var.kms_key #tfsec:ignore:aws-cloudwatch-log-group-customer-key
 
-  tags = { Name = "${var.name_prefix}-${var.environment}-${var.service_name}" }
+  tags = { Name = "${var.name_prefix}-${var.environment}-${each.key}" }
 
   depends_on = [
     aws_kms_key.cloudwatch_logs
@@ -83,7 +83,7 @@ resource "aws_cloudwatch_log_group" "this" {
 resource "aws_cloudwatch_log_stream" "this" {
   for_each = { for app in var.container_definitions : app.name => app }
 
-  name           = "${var.name_prefix}-${var.environment}-${var.service_name}"
+  name           = "${var.name_prefix}-${var.environment}-${each.key}"
   log_group_name = aws_cloudwatch_log_group.this[each.key].name
 }
 
