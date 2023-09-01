@@ -94,5 +94,7 @@ No modules.
 
 ## Outputs
 
-No outputs.
+| Name | Description |
+|------|-------------|
+| <a name="output_target_groups_arn"></a> [target\_groups\_arn](#output\_target\_groups\_arn) | Target Groups ARN |
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
