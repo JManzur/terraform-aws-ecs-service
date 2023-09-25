@@ -46,7 +46,8 @@ data "aws_iam_policy_document" "task_role" {
       "logs:CreateLogStream",
       "logs:PutLogEvents",
       "logs:DescribeLogStreams",
-      "logs:DescribeLogGroups"
+      "logs:DescribeLogGroups",
+      "logs:PutRetentionPolicy"
     ]
     resources = ["arn:aws:logs:*:*:*"]
   }
