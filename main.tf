@@ -55,7 +55,7 @@ resource "aws_kms_key_policy" "cloudwatch_logs" {
 resource "aws_kms_alias" "cloudwatch_logs" {
   count = var.create_kms_key ? 1 : 0
 
-  name          = lower("alias/${var.name_prefix}-${var.environment}-${var.service_name}")
+  name          = lower("alias/${var.name_prefix}-${var.service_name}")
   target_key_id = aws_kms_key.cloudwatch_logs[0].arn
 }
 
@@ -63,7 +63,7 @@ resource "aws_kms_alias" "cloudwatch_logs" {
 resource "aws_cloudwatch_log_group" "this" {
   for_each = { for app in var.container_definitions : app.name => app }
 
-  name              = "/ecs/${var.name_prefix}-${var.environment}-${each.key}"
+  name              = "/ecs/${each.key}/log-driver/awslogs"
   retention_in_days = var.logs_retention
 
   /*
@@ -73,7 +73,7 @@ resource "aws_cloudwatch_log_group" "this" {
   */
   kms_key_id = var.create_kms_key ? aws_kms_key.cloudwatch_logs[0].arn : var.kms_key #tfsec:ignore:aws-cloudwatch-log-group-customer-key
 
-  tags = { Name = "${var.name_prefix}-${var.environment}-${each.key}" }
+  tags = { Name = "${var.name_prefix}-${each.key}" }
 
   depends_on = [
     aws_kms_key.cloudwatch_logs
@@ -83,7 +83,7 @@ resource "aws_cloudwatch_log_group" "this" {
 resource "aws_cloudwatch_log_stream" "this" {
   for_each = { for app in var.container_definitions : app.name => app }
 
-  name           = "${var.name_prefix}-${var.environment}-${each.key}"
+  name           = "${var.name_prefix}-${var.service_name}"
   log_group_name = aws_cloudwatch_log_group.this[each.key].name
 }
 
@@ -101,7 +101,7 @@ locals {
           options = {
             "awslogs-group"         = aws_cloudwatch_log_group.this[container.name].name
             "awslogs-region"        = local.region
-            "awslogs-stream-prefix" = "${var.name_prefix}-${var.environment}-${container.name}"
+            "awslogs-stream-prefix" = "${var.name_prefix}-${container.name}-"
           }
         }
       )
@@ -170,8 +170,9 @@ resource "aws_security_group" "ecs_tasks" {
     for_each = flatten([
       for app in var.container_definitions : [
         for port in try(app.portMappings, []) : {
-          port     = port.containerPort
-          protocol = port.protocol
+          port        = port.containerPort
+          protocol    = port.protocol
+          cidr_blocks = port.cidr_blocks
         }
       ]
     ])
@@ -181,7 +182,7 @@ resource "aws_security_group" "ecs_tasks" {
       from_port   = ingress.value.port
       to_port     = ingress.value.port
       protocol    = ingress.value.protocol
-      cidr_blocks = [var.vpc_cidr]
+      cidr_blocks = ingress.value.cidr_blocks != null ? concat([var.vpc_cidr], ingress.value.cidr_blocks) : [var.vpc_cidr]
     }
   }
 
@@ -200,13 +201,13 @@ resource "aws_security_group" "ecs_tasks" {
 resource "aws_lb_target_group" "ecs_tasks" {
   for_each = { for k, v in var.alb_target_groups : v.name => v }
 
-  name        = "${var.name_prefix}-${var.environment}-${var.service_name}-tg"
+  name        = "${each.value.name}-tg"
   port        = each.value.port
   protocol    = each.value.protocol
   vpc_id      = var.vpc_id
   target_type = "ip"
-
-  tags = { Name = "${var.name_prefix}-${var.environment}-${var.service_name}-tg" }
+  slow_start  = try(each.value.slow_start, 0)
+  tags        = { Name = "${each.value.name}-tg" }
 
   health_check {
     healthy_threshold   = try(each.value.health.healthy_threshold, var.alb_health_check_config.healthy_threshold)
@@ -217,6 +218,18 @@ resource "aws_lb_target_group" "ecs_tasks" {
     protocol            = try(each.value.health.protocol, var.alb_health_check_config.protocol)
     path                = each.value.health.path
   }
+
+  dynamic "stickiness" {
+    for_each = each.value.stickiness != null ? [each.value.stickiness] : []
+    content {
+      type = stickiness.value["type"]
+
+      # Optional attributes
+      cookie_duration = stickiness.value["cookie_duration"]
+      enabled         = stickiness.value["enabled"]
+      cookie_name     = stickiness.value["cookie_name"]
+    }
+  }
 }
 
 # Create a listener rule to forward traffic to the ECS tasks:
@@ -225,6 +238,22 @@ resource "aws_lb_listener_rule" "ecs_tasks" {
 
   listener_arn = each.value.listener_arn != null ? each.value.listener_arn : var.https_listener_arn
   priority     = lookup(each.value, "priority", null)
+
+  dynamic "action" {
+    for_each = lookup(each.value, "oidc_authentication", null) != null ? [1] : []
+
+    content {
+      type = "authenticate-oidc"
+      authenticate_oidc {
+        authorization_endpoint = each.value.oidc_authentication.authorization_endpoint
+        client_id              = each.value.oidc_authentication.client_id
+        client_secret          = each.value.oidc_authentication.client_secret
+        issuer                 = each.value.oidc_authentication.issuer
+        token_endpoint         = each.value.oidc_authentication.token_endpoint
+        user_info_endpoint     = each.value.oidc_authentication.user_info_endpoint
+      }
+    }
+  }
 
   action {
     type             = "forward"
@@ -259,6 +288,7 @@ resource "aws_ecs_service" "this" {
   launch_type            = "FARGATE" # The value is hardcoded to FARGATE because EC2 is not supported by this module.
   platform_version       = var.fargate_platform_version
   enable_execute_command = var.enable_execute_command
+  propagate_tags         = "TASK_DEFINITION"
 
   # Deployment configuration:
   deployment_controller {
@@ -276,7 +306,7 @@ resource "aws_ecs_service" "this" {
 
   # Network configuration:
   network_configuration {
-    security_groups  = length(var.security_group) == 0 ? compact([aws_security_group.ecs_tasks[0].id, join(",", var.additional_security_groups)]) : [var.security_group]
+    security_groups  = length(var.security_group) == 0 ? compact([aws_security_group.ecs_tasks[0].id, join(",", var.add_security_groups)]) : [var.security_group]
     subnets          = var.private_subnets
     assign_public_ip = false
   }

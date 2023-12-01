@@ -44,9 +44,10 @@ data "aws_iam_policy_document" "execution_role" {
       "logs:CreateLogStream",
       "logs:PutLogEvents",
       "logs:DescribeLogStreams",
-      "logs:PutRetentionPolicy"
+      "logs:PutRetentionPolicy",
+      "logs:DeleteRetentionPolicy"
     ]
-    resources = ["arn:aws:logs:${local.region}:${local.account_id}:log-group:/ecs/${var.name_prefix}-${var.environment}-*"]
+    resources = ["arn:aws:logs:${local.region}:${local.account_id}:log-group:/ecs/*"]
   }
 
   statement {

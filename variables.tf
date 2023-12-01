@@ -38,6 +38,7 @@ variable "alb_target_groups" {
   [REQUIRED] The ALB Target Group configuration for the ECS Service.
     - name (string): The name of the ALB target group.
     - port (number): The port to use for the ALB target group.
+    - slow_start (number): Amount of time (in seconds) for targets to warm up before the load balancer sends them a full share of requests
     - health (object): Health check configuration if we don't want to use a single config set for all target groups
       - path (string): URI to be requested
       - healthy_threshold (number): number of checks that should pass before considering target healthy
@@ -46,11 +47,18 @@ variable "alb_target_groups" {
       - interval (number): seconds between checks
       - matcher (number): HTTP code that is expected in the response
       - protocol (string): protocol in which the check should be sent (HTTP, HTTPS, TCP, etc)
+    - stickiness (object): Stickiness configuration block
+      - type (string): The type of sticky sessions. The only current possible values are lb_cookie, app_cookie for ALBs, source_ip for NLBs, and source_ip_dest_ip, source_ip_dest_ip_proto for GWLBs.
+      - cookie_duration (number): Only used when the type is lb_cookie. The time period, in seconds, during which requests from a client should be routed to the same target. After this time period expires, the load balancer-generated cookie is considered stale. The range is 1 second to 1 week (604800 seconds). The default value is 1 day (86400 seconds).
+      - cookie_name (string): Name of the application based cookie. AWSALB, AWSALBAPP, and AWSALBTG prefixes are reserved and cannot be used. Only needed when type is app_cookie
+      - enabled (bool): Boolean to enable / disable stickiness. Default is true
   EOF
   type = list(
     object({
-      name = string
-      port = number
+      name       = string
+      port       = number
+      protocol   = string
+      slow_start = optional(number)
       health = optional(object({
         path                = string
         healthy_threshold   = optional(number)
@@ -60,9 +68,23 @@ variable "alb_target_groups" {
         matcher             = optional(number)
         protocol            = optional(string)
       }))
-      protocol = string
+      stickiness = optional(object({
+        type            = string
+        cookie_duration = optional(number)
+        cookie_name     = optional(string)
+        enabled         = optional(bool)
+      }))
     })
   )
+
+  # Validation: if slow_start is set, then the value must be either 0 or between 30 and 900
+  validation {
+    condition = alltrue([
+      for alb_target_group in var.alb_target_groups :
+      can(index(alb_target_group, "slow_start")) ? alb_target_group.slow_start == 0 || (alb_target_group.slow_start >= 30 && alb_target_group.slow_start <= 900) : true
+    ])
+    error_message = "Invalid slow_start value. Must be either 0 or between 30 and 900."
+  }
 }
 
 variable "alb_listener_rules" {
@@ -77,11 +99,12 @@ variable "alb_listener_rules" {
     - priority (number): The priority for the rule between 1 and 50000.
   EOF
   type = list(object({
-    name         = string
-    listener_arn = optional(string)
-    path_pattern = list(string)
-    host_header  = optional(list(string))
-    priority     = optional(number)
+    name                = string
+    listener_arn        = optional(string)
+    path_pattern        = list(string)
+    host_header         = optional(list(string))
+    priority            = optional(number)
+    oidc_authentication = optional(map(string))
   }))
 }
 
@@ -112,6 +135,7 @@ variable "container_definitions" {
   - portMappings (list(object)): The list of port mappings for the container.
     - containerPort (number): The port number on the container.
     - protocol (string): The protocol used for the port mapping.
+    - cidr_blocks list(string): Optional CIDR blocks to be used as sources
   - user (string): The user name to use inside the container.
   - ulimits (list(object)): A list of ulimits to set in the container.
     - name (string): The type of the ulimit.
@@ -160,6 +184,7 @@ variable "container_definitions" {
     portMappings = list(object({
       containerPort = optional(number)
       protocol      = optional(string)
+      cidr_blocks   = optional(list(string))
     }))
     user = optional(string)
     ulimits = optional(list(object({
@@ -230,10 +255,17 @@ variable "container_definitions" {
 
   validation {
     condition = alltrue([
-      for container_def in var.container_definitions :
-      container_def.cpu >= 256 && container_def.cpu <= 16384
+      for container_def in var.container_definitions : (
+        container_def.cpu == 256 ||
+        container_def.cpu == 512 ||
+        container_def.cpu == 1024 ||
+        container_def.cpu == 2048 ||
+        container_def.cpu == 4096 ||
+        container_def.cpu == 8192 ||
+        container_def.cpu == 16384
+      )
     ])
-    error_message = "CPU value must be between 256 and 16384."
+    error_message = "CPU value must be one of the following: 256, 512, 1024, 2048, 4096, 8192, 16384."
   }
 
   validation {
@@ -334,7 +366,7 @@ variable "appautoscaling_config" {
     min_capacity       = 2
     max_capacity       = 6
     metric_type        = "ECSServiceAverageCPUUtilization"
-    target_value       = 85
+    target_value       = 80
     disable_scale_in   = false
     scale_in_cooldown  = 60
     scale_out_cooldown = 60
@@ -362,6 +394,12 @@ variable "task_role_arn" {
   type        = string
   description = "[OPTIONAL] ARN of IAM role that allows your Amazon ECS container task to make calls to other AWS services."
   default     = ""
+}
+
+variable "opensearch_serverless_collection_name" {
+  type        = string
+  description = "[OPTIONAL] The name of the OpenSearch collection to use for the ECS Service."
+  default     = null
 }
 
 variable "security_group" {
@@ -529,7 +567,7 @@ variable "logs_retention" {
 
 variable "fargate_compute_capacity" {
   description = <<EOF
-  [OPTIONAL] The amount (in GB) of memory used by the task. 
+  [OPTIONAL] The amount (in GB) of memory used by the task.
   Ref.: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html
 
   Example:
@@ -554,7 +592,7 @@ variable "fargate_compute_capacity" {
       (var.fargate_compute_capacity.cpu == 512 && var.fargate_compute_capacity.memory >= 1024 && var.fargate_compute_capacity.memory <= 4096) ||
       (var.fargate_compute_capacity.cpu == 1024 && var.fargate_compute_capacity.memory >= 2048 && var.fargate_compute_capacity.memory <= 8192) ||
       (var.fargate_compute_capacity.cpu == 2048 && var.fargate_compute_capacity.memory >= 4096 && var.fargate_compute_capacity.memory <= 16384) ||
-      (var.fargate_compute_capacity.cpu == 4096 && var.fargate_compute_capacity.memory >= 16384 && var.fargate_compute_capacity.memory <= 30720) ||
+      (var.fargate_compute_capacity.cpu == 4096 && var.fargate_compute_capacity.memory >= 8192 && var.fargate_compute_capacity.memory <= 30720) ||
       (var.fargate_compute_capacity.cpu == 8192 && var.fargate_compute_capacity.memory >= 16384 && var.fargate_compute_capacity.memory <= 61440) ||
       (var.fargate_compute_capacity.cpu == 16384 && var.fargate_compute_capacity.memory >= 32768 && var.fargate_compute_capacity.memory <= 122880)
     )
@@ -592,8 +630,36 @@ variable "https_listener_arn" {
   default     = "" # Null is allowed if var.alb_listener_rules.listener_arn is set
 }
 
-variable "additional_security_groups" {
+variable "add_security_groups" {
   type        = list(any)
   description = "[OPTIONAL] list of additional security groups"
-  default     = [] # Empty list is allowed
+}
+
+variable "cloudwatch_notifications" {
+  type = object({
+    cpu_utilization_enabled              = bool
+    memory_utilization_enabled           = bool
+    cpu_utilization_threshold            = number
+    memory_utilization_threshold         = number
+    notification_topic_arn_ok_actions    = string
+    notification_topic_arn_alarm_actions = string
+  })
+
+  description = <<EOF
+  [OPTIONAL] CloudWatch notifications configuration for the ECS Service.
+  - cpu_utilization_enabled (bool): Whether to enable CloudWatch notifications for CPU utilization.
+  - memory_utilization_enabled (bool): Whether to enable CloudWatch notifications for memory utilization.
+  - cpu_utilization_threshold (number): The CPU utilization threshold in percent.
+  - memory_utilization_threshold (number): The memory utilization threshold in percent.
+  - notification_topic_arn (string): The ARN of the SNS topic to send notifications to.
+  EOF
+
+  default = {
+    cpu_utilization_enabled              = false
+    cpu_utilization_threshold            = 80
+    memory_utilization_enabled           = false
+    memory_utilization_threshold         = 80
+    notification_topic_arn_ok_actions    = ""
+    notification_topic_arn_alarm_actions = ""
+  }
 }

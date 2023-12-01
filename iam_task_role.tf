@@ -21,8 +21,7 @@ data "aws_iam_policy_document" "task_role" {
     resources = ["*"]
   }
 
-  # OpenSearch Policy: Needed for firelens logging driver:
-  # Temporal: Will be changed for a dynamic block when the OpenSearch module is ready.
+  # OpenSearch Manage Cluster Policy: Needed for firelens logging driver
   statement {
     sid    = "ESAccess"
     effect = "Allow"
@@ -36,8 +35,17 @@ data "aws_iam_policy_document" "task_role" {
     resources = ["arn:aws:es:${local.region}:${local.account_id}:domain/*"]
   }
 
-  # CloudWatch Logs Policy: Needed for firelens logging driver:
-  # Temporal: Will be changed for a dynamic block when the OpenSearch module is ready.
+  # OpenSearch Serverless Policy: Needed for firelens logging driver
+  statement {
+    sid    = "OpenSearchServerlessAccess"
+    effect = "Allow"
+    actions = [
+      "aoss:APIAccessAll",
+    ]
+    resources = ["arn:aws:aoss:${local.region}:${local.account_id}:collection/*"]
+  }
+
+  # CloudWatch Logs Policy: Needed for firelens logging driver
   statement {
     sid    = "CloudWatchLogs"
     effect = "Allow"
@@ -47,7 +55,8 @@ data "aws_iam_policy_document" "task_role" {
       "logs:PutLogEvents",
       "logs:DescribeLogStreams",
       "logs:DescribeLogGroups",
-      "logs:PutRetentionPolicy"
+      "logs:PutRetentionPolicy",
+      "logs:DeleteRetentionPolicy"
     ]
     resources = ["arn:aws:logs:*:*:*"]
   }
