@@ -1,13 +1,6 @@
-# AWS ECS Service - Terraform Module
-
-This is a Terraform module that creates an ECS (Elastic Container Service) service in AWS (Amazon Web Services). The module takes various inputs, such as the name and environment of the service, the cluster and subnets to use, and the container definitions. The container definitions include details such as the Docker image to use, the port mappings, and the desired count of containers. The module can also mount EFS volumes in the containers. Overall, this module simplifies the process of setting up an ECS service in AWS.
-
-## How to use this module
-
-```bash
 module "vpc" {
   source      = "git::https://github.com/JManzur/terraform-aws-vpc.git?ref=v1.0.3"
-  name_prefix = "JM"
+  name_prefix = var.name_prefix
   vpc_cidr    = "10.22.0.0/16"
   public_subnet_list = [
     {
@@ -53,7 +46,6 @@ module "ecs" {
 module "elb" {
   source = "git::https://github.com/JManzur/terraform-aws-elb.git?ref=v1.0.1"
 
-  # Required variables:
   name_prefix             = var.name_prefix
   environment             = var.environment
   name_suffix             = var.name_suffix
@@ -118,7 +110,7 @@ module "ecs_service" {
   ]
   alb_listener_rules = [{
     name             = local.service_name
-    listener_arn     = module.elb.https_listener_arns["demo"]
+    listener_arn     = module.elb.https_listener_arns["demo"] # The key needs to match the name of the ELB
     healthcheck_path = "/"
     path_pattern     = ["*"]
   }]
@@ -133,7 +125,6 @@ module "ecs_service" {
       memory           = local.app_container.memory
       secrets          = []
       environmentFiles = []
-      portMappings     = []
       linuxParameters = {
         initProcessEnabled = true
       }
@@ -158,8 +149,3 @@ module "ecs_service" {
     module.elb
   ]
 }
-```
-
-<!-- BEGINNING OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
-README.md updated successfully
-<!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->

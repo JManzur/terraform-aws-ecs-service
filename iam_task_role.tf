@@ -21,6 +21,15 @@ data "aws_iam_policy_document" "task_role" {
     resources = ["*"]
   }
 
+  statement {
+    sid    = "KMSDecrypt"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+    ]
+    resources = ["*"]
+  }
+
   # OpenSearch Manage Cluster Policy: Needed for firelens logging driver
   statement {
     sid    = "ESAccess"
