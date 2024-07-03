@@ -56,7 +56,7 @@ module "elb" {
     name     = "demo"
     internal = false
     type     = "application"
-    subnets  = module.vpc.private_subnets_ids
+    subnets  = module.vpc.public_subnets_ids
   }]
   access_logs_bucket = {
     enable_access_logs = false
@@ -65,14 +65,15 @@ module "elb" {
 }
 
 locals {
-  service_name = "images-uploader"
+  service_name = "demo-lb-app"
   app_container = {
-    name              = "images-uploader"
-    port              = 8889
-    image             = "jmanzur/images-uploader:latest"
+    name              = "demo-lb-app"
+    port              = 8882
+    image             = "jmanzur/demo-lb-app:latest"
     cpu               = 2048
     memory            = 4096
     health_check_path = "/status"
+    replicas          = 2
   }
   fargate_compute_capacity = {
     cpu    = 4096
@@ -81,7 +82,7 @@ locals {
 }
 
 module "ecs_service" {
-  source = "git::https://github.com/JManzur/terraform-aws-ecs-service.git?ref=v1.0.6"
+  source = "git::https://github.com/JManzur/terraform-aws-ecs-service.git?ref=v1.0.7"
 
   name_prefix              = var.name_prefix
   environment              = var.environment
@@ -93,7 +94,7 @@ module "ecs_service" {
   vpc_cidr                 = module.vpc.vpc_cidr
   private_subnets          = module.vpc.private_subnets_ids
   service_name             = local.service_name
-  desired_count            = 1
+  desired_count            = local.app_container.replicas
   fargate_compute_capacity = local.fargate_compute_capacity
   add_security_groups      = []
   appautoscaling_enabled   = false
@@ -111,7 +112,7 @@ module "ecs_service" {
   alb_listener_rules = [{
     name             = local.service_name
     listener_arn     = module.elb.https_listener_arns["demo"] # The key needs to match the name of the ELB
-    healthcheck_path = "/"
+    healthcheck_path = local.app_container.health_check_path
     path_pattern     = ["*"]
   }]
 
