@@ -9,7 +9,10 @@ This example creates a VPC with public and private subnets, an ECS Fargate clust
 
 ## How to Deploy
 
-Perform the following steps to deploy the example:
+Clone this repository and navigate to the example directory:
+```bash
+git clone https://github.com/JManzur/terraform-aws-ecs-service.git && cd terraform-aws-ecs-service
+```
 
 Create a `terraform.tfvars` file with the following content:
 ```hcl
