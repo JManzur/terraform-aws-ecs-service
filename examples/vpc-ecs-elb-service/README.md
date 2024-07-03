@@ -1,7 +1,14 @@
 
 # Example VPC ECS ELB Service
 
-This example creates a VPC with public and private subnets, an ECS Fargate cluster, an deploy an ECS service with an Application Load Balancer.
+This example creates a VPC with public and private subnets, an ECS Fargate cluster, and deploy an ECS service with a Internet-facing Application Load Balancer.
+
+All the resources are created using Terraform modules that I have published in my GitHub repository:
+
+- [terraform-aws-vpc](https://github.com/JManzur/terraform-aws-vpc)
+- [terraform-aws-ecs-fargate](https://github.com/JManzur/terraform-aws-ecs-fargate)
+- [terraform-aws-elb](https://github.com/JManzur/terraform-aws-elb)
+- And the `terraform-aws-ecs-service` module that is hosted in this repository.
 
 ## Solution Diagram
 
