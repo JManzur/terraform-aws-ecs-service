@@ -67,7 +67,6 @@ Access the ECS Task and execute the `env` command to check the environment varia
 
 ![example-vpc-ecs-elb-service](./assets/secrets_from.png)
 
-```bash
 ## Clean Up
 
 To clean up the resources, run the following command:
