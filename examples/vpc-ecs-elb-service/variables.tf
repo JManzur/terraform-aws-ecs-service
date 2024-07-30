@@ -34,3 +34,13 @@ variable "name_suffix" {
   type        = string
   default     = "main"
 }
+
+variable "database_username" {
+  type        = string
+  description = "[REQUIRED] Username for the database."
+}
+
+variable "database_password" {
+  type        = string
+  description = "[REQUIRED] Password for the database."
+}

@@ -64,6 +64,26 @@ module "elb" {
   }
 }
 
+module "ssm_parameters" {
+  source = "git::https://github.com/JManzur/terraform-aws-ssm-parameter.git?ref=v1.0.1"
+
+  create_kms_key          = false
+  ssm_parameter = [
+    {
+      name        = "/myapp/dev/database/username"
+      description = "Not a big secret"
+      type        = "SecureString"
+      value       = var.database_username
+    },
+    {
+      name        = "/myapp/dev/database/password"
+      description = "The VPC ID"
+      type        = "SecureString"
+      value       = var.database_password
+    }
+  ]
+}
+
 locals {
   service_name = "demo-lb-app"
   app_container = {
@@ -124,7 +144,16 @@ module "ecs_service" {
       log_routing      = "awslogs"
       cpu              = local.app_container.cpu
       memory           = local.app_container.memory
-      secrets          = []
+      secrets          = [
+        {
+          name      = "DATABASE_USERNAME"
+          valueFrom = module.ssm_parameters.parameter_arn["/myapp/dev/database/username"]
+        },
+        {
+          name      = "DATABASE_PASSWORD"
+          valueFrom = module.ssm_parameters.parameter_arn["/myapp/dev/database/password"]
+        }
+      ]
       environmentFiles = []
       linuxParameters = {
         initProcessEnabled = true
